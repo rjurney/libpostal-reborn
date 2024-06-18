@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  
+  jupyter:
+    image: rjurney/libpostal-reborn:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jupyter
+    ports:
+      - 8888:8888
+    volumes:
+      - .:/home/jovyan/work
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - DGLBACKEND=pytorch
+    env_file:
+      - .env
+    restart: always
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+    deploy:
+      resources:
+        limits:
+          memory: 64G
+          cpus: "8"
+        reservations:
+          cpus: "4"
+          memory: 16G

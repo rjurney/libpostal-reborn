@@ -1,0 +1,6 @@
+__pycache__
+.env
+data
+.mypy_cache
+wandb
+metrics
