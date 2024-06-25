@@ -1,8 +1,11 @@
+import logging
+import sys
 import time
 from numbers import Number
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Tuple, Union
 
 import pandas as pd
+import torch
 from langchain.chains import LLMChain
 from langchain.globals import set_llm_cache
 from langchain.prompts import (
@@ -14,6 +17,7 @@ from langchain_core.caches import InMemoryCache
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai.chat_models import ChatOpenAI
 from openai import APIConnectionError, RateLimitError
+from postal.parser import parse_address
 from sklearn.metrics import (  # type: ignore
     accuracy_score,
     f1_score,
@@ -22,6 +26,10 @@ from sklearn.metrics import (  # type: ignore
     roc_auc_score,
 )
 from tqdm.notebook import tqdm
+
+# Setup basic logging
+logging.basicConfig(stream=sys.stderr, level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 def gold_label_report(
@@ -166,18 +174,18 @@ def augment_gold_labels(gold_df: pd.DataFrame, runs_per_example: int = 1) -> pd.
     return augmented_df
 
 
-def compute_metrics(eval_pred: Tuple[List, List]) -> Dict[str, Number]:
+def compute_sbert_metrics(eval_pred: Tuple[List, List]) -> Dict[str, Number]:
     """compute_metrics - Compute accuracy, precision, recall, f1 and roc_auc"""
     predictions, labels = eval_pred
     metrics = {}
     for metric in accuracy_score, precision_score, recall_score, f1_score, roc_auc_score:
         metrics[metric.__name__] = metric(labels, predictions)
 
-    # plot = wandb.plot.roc_curve(labels, predictions, labels=None, classes_to_plot=None)
-    # wandb.log({"roc_curve": plot})
-
-    # wandb.log(metrics)
     return metrics
+
+
+def preprocess_logits_for_metrics(logits, labels):
+    return logits.argmax(dim=-1)
 
 
 def to_dict(parsed_address: List[Tuple[str, str]]) -> Dict[str, Union[str, List[str]]]:
@@ -192,3 +200,109 @@ def to_dict(parsed_address: List[Tuple[str, str]]) -> Dict[str, Union[str, List[
         else:
             d[key] = value
     return d
+
+
+def parse_match_address(address1: str, address2: str) -> Literal[0, 1]:
+    """parse_match_address implements address matching using the precise, parsed structure of addresses."""
+    address1 = to_dict(parse_address(address1))
+    address2 = to_dict(parse_address(address2))
+
+    def match_road(address1: Dict, address2: Dict) -> Literal[0, 1]:
+        """match_road - literal road matching, negative if either lacks a road"""
+        if ("road" in address1) and ("road" in address2):
+            if address1["road"] == address2["road"]:
+                logger.debug("road match")
+                return 1
+            else:
+                logger.debug("road mismatch")
+                return 0
+        logger.debug("road mismatch")
+        return 0
+
+    def match_house_number(address1: Dict, address2: Dict) -> Literal[0, 1]:
+        """match_house_number - literal house number matching, negative if either lacks a house_number"""
+        if ("house_number" in address1) and ("house_number" in address2):
+            if address1["house_number"] == address2["house_number"]:
+                logger.debug("house_number match")
+                return 1
+            else:
+                logger.debug("house_number mismatch")
+                return 0
+        logger.debug("house_number mistmatch")
+        return 0
+
+    def match_unit(address1: Dict, address2: Dict) -> Literal[0, 1]:
+        """match_unit - note a missing unit in both is a match"""
+        if "unit" in address1:
+            if "unit" in address2:
+                logger.debug("unit match")
+                return 1 if (address1["unit"] == address2["unit"]) else 0
+            else:
+                logger.debug("unit mismatch")
+                return 0
+        if "unit" in address2:
+            if "unit" in address1:
+                logger.debug("unit match")
+                return 1 if (address1["unit"] == address2["unit"]) else 0
+            else:
+                logger.debug("unit mismatch")
+                return 0
+        # Neither address has a unit, which is a default match
+        return 1
+
+    def match_postcode(address1: Dict, address2: Dict) -> Literal[0, 1]:
+        """match_postcode - literal matching, negative if either lacks a postal code"""
+        if ("postcode" in address1) and ("postcode" in address2):
+            if address1["postcode"] == address2["postcode"]:
+                logger.debug("postcode match")
+                return 1
+            else:
+                logger.debug("postcode mismatch")
+                return 0
+        logger.debug("postcode mismatch")
+        return 0
+
+    def match_country(address1: Dict, address2: Dict) -> Literal[0, 1]:
+        """match_country - literal country matching - pass if both don't have one"""
+        if ("country" in address1) and ("country" in address2):
+            if address1["country"] == address2["country"]:
+                logger.debug("country match")
+                return 1
+            else:
+                logger.debug("country mismatch")
+                return 0
+        # One or none countries should match
+        logger.debug("country match")
+        return 1
+
+    # Combine the above to get a complete address matcher
+    if (
+        match_road(address1, address2)
+        and match_house_number(address1, address2)
+        and match_unit(address1, address2)
+        and match_postcode(address1, address2)
+        and match_country(address1, address2)
+    ):
+        logger.debug("overall match")
+        return 1
+    else:
+        logger.debug("overall mismatch")
+        return 0
+
+
+def compute_classifier_metrics(eval_pred):
+    logits, labels = eval_pred
+    logits = torch.tensor(logits)
+    labels = torch.tensor(labels)
+    predictions = (logits > 0.5).long().squeeze()
+
+    if len(predictions) != len(labels):
+        raise ValueError(
+            f"Mismatch in lengths: predictions ({len(predictions)}) and labels ({len(labels)})"
+        )
+
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels, predictions, average="binary"
+    )
+    acc = accuracy_score(labels, predictions)
+    return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
