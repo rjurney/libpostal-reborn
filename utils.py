@@ -347,6 +347,8 @@ def format_dataset(dataset):
 
 
 def save_custom_model(model, save_path):
+    os.makedirs(save_path, exist_ok=True)
+
     # Save the base BERT model and tokenizer
     model.model.save_pretrained(save_path)
     model.tokenizer.save_pretrained(save_path)
