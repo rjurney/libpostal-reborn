@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import time
 from numbers import Number
@@ -17,15 +18,20 @@ from langchain_core.caches import InMemoryCache
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai.chat_models import ChatOpenAI
 from openai import APIConnectionError, RateLimitError
-from postal.parser import parse_address
+from postal.parser import parse_address  # type: ignore
 from sklearn.metrics import (  # type: ignore
     accuracy_score,
     f1_score,
+    precision_recall_fscore_support,
     precision_score,
     recall_score,
     roc_auc_score,
 )
 from tqdm.notebook import tqdm
+from transformers import AutoModel, AutoTokenizer
+
+COLUMN_SPECIAL_CHAR = "[COL]"
+VALUE_SPECIAL_CHAR = "[VAL]"
 
 # Setup basic logging
 logging.basicConfig(stream=sys.stderr, level=logging.ERROR)
@@ -306,3 +312,61 @@ def compute_classifier_metrics(eval_pred):
     )
     acc = accuracy_score(labels, predictions)
     return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
+
+
+def structured_encode_address(address: str) -> str:
+    """structured_parse_address - encode a parsed address"""
+    parsed_address: List[Tuple[str, str]] = parse_address(address)
+    sorted_address: List[Tuple[str, str]] = list(
+        sorted(parsed_address, key=lambda x: x[1])
+    )  # no secondary sort to maek it determinstic?
+    encoded_address: str = str()
+    for val, col in sorted_address:
+        encoded_address += COLUMN_SPECIAL_CHAR + col + VALUE_SPECIAL_CHAR + val
+    return encoded_address
+
+
+def tokenize_function(examples, model):
+    encoded_a = model.tokenizer(examples["sentence1"], padding="max_length", truncation=True)
+    encoded_b = model.tokenizer(examples["sentence2"], padding="max_length", truncation=True)
+    return {
+        "input_ids_a": encoded_a["input_ids"],
+        "attention_mask_a": encoded_a["attention_mask"],
+        "input_ids_b": encoded_b["input_ids"],
+        "attention_mask_b": encoded_b["attention_mask"],
+        "labels": examples["label"],
+    }
+
+
+def format_dataset(dataset):
+    dataset.set_format(
+        type="torch",
+        columns=["input_ids_a", "attention_mask_a", "input_ids_b", "attention_mask_b", "labels"],
+    )
+    return dataset
+
+
+def save_custom_model(model, save_path):
+    # Save the base BERT model and tokenizer
+    model.model.save_pretrained(save_path)
+    model.tokenizer.save_pretrained(save_path)
+
+    # Save the entire state dict of your custom model
+    torch.save(model.state_dict(), os.path.join(save_path, "full_model_state_dict.pt"))
+
+
+def load_custom_model(model_cls, load_path, device="cpu"):
+    # Initialize your custom model
+    custom_model = model_cls(model_name=load_path)
+
+    # Load the base BERT model and tokenizer
+    custom_model.model = AutoModel.from_pretrained(load_path)
+    custom_model.tokenizer = AutoTokenizer.from_pretrained(load_path)
+
+    # Load the full state dict
+    state_dict = torch.load(
+        os.path.join(load_path, "full_model_state_dict.pt"), map_location=device
+    )
+    custom_model.load_state_dict(state_dict)
+
+    return custom_model.to(device)
