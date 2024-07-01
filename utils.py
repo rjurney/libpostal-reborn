@@ -372,7 +372,9 @@ def save_transformer(model: torch.nn.Module, save_path: str) -> None:
 T = TypeVar("T", bound=torch.nn.Module)
 
 
-def load_transformer(model_cls: Type[T], load_path: str, device: str = "cpu") -> T:
+def load_transformer(
+    model_cls: Type[T], load_path: str, device: Union[str, torch.device] = "cpu"
+) -> T:
     """load_transformer Load a saved Transformers model and its tokenizer.
 
     Parameters
