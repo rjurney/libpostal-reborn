@@ -28,7 +28,7 @@ from sklearn.metrics import (  # type: ignore
     roc_auc_score,
 )
 from tqdm.notebook import tqdm
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer  # type: ignore
 
 COLUMN_SPECIAL_CHAR = "[COL]"
 VALUE_SPECIAL_CHAR = "[VAL]"
@@ -208,10 +208,10 @@ def to_dict(parsed_address: List[Tuple[str, str]]) -> Dict[str, Union[str, List[
     return d
 
 
-def parse_match_address(address1: str, address2: str) -> Literal[0, 1]:
+def parse_match_address(address1: str, address2: str) -> Literal[0, 1]:  # noqa: C901
     """parse_match_address implements address matching using the precise, parsed structure of addresses."""
-    address1 = to_dict(parse_address(address1))
-    address2 = to_dict(parse_address(address2))
+    parsed_address1: Dict[str, Union[str, List[str]]] = to_dict(parse_address(address1))
+    parsed_address2: Dict[str, Union[str, List[str]]] = to_dict(parse_address(address2))
 
     def match_road(address1: Dict, address2: Dict) -> Literal[0, 1]:
         """match_road - literal road matching, negative if either lacks a road"""
@@ -283,11 +283,11 @@ def parse_match_address(address1: str, address2: str) -> Literal[0, 1]:
 
     # Combine the above to get a complete address matcher
     if (
-        match_road(address1, address2)
-        and match_house_number(address1, address2)
-        and match_unit(address1, address2)
-        and match_postcode(address1, address2)
-        and match_country(address1, address2)
+        match_road(parsed_address1, parsed_address2)
+        and match_house_number(parsed_address1, parsed_address2)
+        and match_unit(parsed_address1, parsed_address2)
+        and match_postcode(parsed_address1, parsed_address2)
+        and match_country(parsed_address1, parsed_address2)
     ):
         logger.debug("overall match")
         return 1
