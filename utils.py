@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from numbers import Number
-from typing import Any, Callable, Dict, List, Literal, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Tuple, Type, TypeVar, Union
 
 import pandas as pd
 import torch
@@ -28,7 +28,7 @@ from sklearn.metrics import (  # type: ignore
     roc_auc_score,
 )
 from tqdm.notebook import tqdm
-from transformers import AutoModel, AutoTokenizer  # type: ignore
+from transformers import AutoModel, AutoTokenizer, Trainer  # type: ignore
 
 COLUMN_SPECIAL_CHAR = "[COL]"
 VALUE_SPECIAL_CHAR = "[VAL]"
@@ -346,29 +346,61 @@ def format_dataset(dataset):
     return dataset
 
 
-def save_custom_model(model, save_path):
+def save_transformer(model: torch.nn.Module, save_path: str) -> None:
+    """Save a trained Transformers model and its tokenizer.
+
+    Args:
+    model (torch.nn.Module): The trained transformers model to save.
+    save_path (str): The directory path where the model will be saved.
+    """
+
     os.makedirs(save_path, exist_ok=True)
 
-    # Save the base BERT model and tokenizer
-    model.model.save_pretrained(save_path)
+    # Save the model state
+    torch.save(model.state_dict(), os.path.join(save_path, "model_state.pt"))
+
+    # Save the tokenizer
     model.tokenizer.save_pretrained(save_path)
 
-    # Save the entire state dict of your custom model
-    torch.save(model.state_dict(), os.path.join(save_path, "full_model_state_dict.pt"))
+    # Save the model configuration (optional, but recommended)
+    config = {"model_name": model.model_name, "dim": model.ffnn[0].in_features}
+    torch.save(config, os.path.join(save_path, "config.pt"))
+
+    logging.info(f"Model saved to {save_path}")
 
 
-def load_custom_model(model_cls, load_path, device="cpu"):
-    # Initialize your custom model
-    custom_model = model_cls(model_name=load_path)
+T = TypeVar("T", bound=torch.nn.Module)
 
-    # Load the base BERT model and tokenizer
-    custom_model.model = AutoModel.from_pretrained(load_path)
-    custom_model.tokenizer = AutoTokenizer.from_pretrained(load_path)
 
-    # Load the full state dict
-    state_dict = torch.load(
-        os.path.join(load_path, "full_model_state_dict.pt"), map_location=device
-    )
-    custom_model.load_state_dict(state_dict)
+def load_transformer(model_cls: Type[T], load_path: str, device: str = "cpu") -> T:
+    """load_transformer Load a saved Transformers model and its tokenizer.
 
-    return custom_model.to(device)
+    Parameters
+    ----------
+    model_cls : torch.nn.Module class
+        Model class name
+    load_path : _type_
+        Saved model directory path
+
+    Returns
+    -------
+    Any
+        Model with weights loaded from the saved directory
+    """
+    # Load the configuration
+    config = torch.load(os.path.join(load_path, "config.pt"))
+
+    # Initialize the model
+    model: T = model_cls(model_name=config["model_name"], dim=config["dim"])
+
+    # Load the model state
+    model.load_state_dict(torch.load(os.path.join(load_path, "model_state.pt")))
+
+    # Load the tokenizer
+    model.tokenizer = AutoTokenizer.from_pretrained(load_path)
+
+    # Send it to the right device
+    model.to(device)
+
+    logging.info(f"Model loaded from {load_path}")
+    return model
