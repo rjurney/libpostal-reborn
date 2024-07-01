@@ -326,9 +326,9 @@ def structured_encode_address(address: str) -> str:
     return encoded_address
 
 
-def tokenize_function(examples, model):
-    encoded_a = model.tokenizer(examples["sentence1"], padding="max_length", truncation=True)
-    encoded_b = model.tokenizer(examples["sentence2"], padding="max_length", truncation=True)
+def tokenize_function(examples, tokenizer):
+    encoded_a = tokenizer(examples["sentence1"], padding="max_length", truncation=True)
+    encoded_b = tokenizer(examples["sentence2"], padding="max_length", truncation=True)
     return {
         "input_ids_a": encoded_a["input_ids"],
         "attention_mask_a": encoded_a["attention_mask"],
