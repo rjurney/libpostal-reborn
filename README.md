@@ -1,4 +1,4 @@
-# Source code for post: Libpostal, Reborn!
+# Source code for post: Libpostal, Reborn
 
 <div style="float:left;margin-right: 10px" markdown="1">
 <img src="images/libpostal-logo.png" align="left" style="float: left; margin-right: 10px;"/>
@@ -7,6 +7,16 @@
 This repository contains the source code for the blog post [Libpostal, Reborn!]() Use it to reproduce the results show in the post as a jumping off point to adopting Libpostal.
 
 There are two ways to run the code - Docker or local Python 3. The Docker method is easier, but the local Python 3 method will work with Visual Studio Code and Apple MPS GPUs.
+
+## Address Matching via Sentence Transformers
+
+This project includes notebooks that demonstrate how to fine-tune a model using the `SentenceTransformers` library to match addresses. The final model interface will return a sentence embedding for a given address based on the textual semantics of 10-20K global addresses. This work could be extended into a matching product.
+
+The notebooks are:
+
+1) <a href="Address Data Augmentation.ipynb">Address Data Augmentation.ipynb</a> - this notebook takes =~ 100 corner cases for address matching / mismatching and generates 5-figures of labeled training pairs to fine-tune a model.
+
+2) <a href="Fine-Tuned Sentence Transformer.ipynb">Fine-Tuned Sentence Transformer.ipynb</a> - This notebook demonstrates how to fine-tune a model using the <a href="https://sbert.net">sentence-transformers</a> Python library to match addresses.
 
 ## Running the Code
 
