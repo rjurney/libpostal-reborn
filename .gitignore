@@ -6,3 +6,4 @@ data
 .mypy_cache
 wandb
 metrics
+nohup.out
